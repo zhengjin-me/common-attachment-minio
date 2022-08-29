@@ -1,0 +1,41 @@
+{
+  "groups": [
+    {
+      "name": "customize.common.storage.minio",
+      "type": "me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties",
+      "sourceType": "me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties"
+    }
+  ],
+  "properties": [
+    {
+      "name": "customize.common.storage.type",
+      "type": "java.lang.String",
+      "description": "attachment storage type.",
+      "defaultValue": "minio"
+    },
+    {
+      "name": "customize.common.storage.minio.bucket",
+      "type": "java.lang.String",
+      "description": "minio bucket",
+      "sourceType": "me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties"
+    },
+    {
+      "name": "customize.common.storage.minio.endpoint",
+      "type": "java.lang.String",
+      "description": "minio endpoint",
+      "sourceType": "me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties"
+    },
+    {
+      "name": "customize.common.storage.minio.accessKey",
+      "type": "java.lang.String",
+      "description": "minio accessKey",
+      "sourceType": "me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties"
+    },
+    {
+      "name": "customize.common.storage.minio.secretKey",
+      "type": "java.lang.String",
+      "description": "minio secretKey",
+      "sourceType": "me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties"
+    }
+  ]
+}
