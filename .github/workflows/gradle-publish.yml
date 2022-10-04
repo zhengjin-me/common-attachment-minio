@@ -6,19 +6,13 @@
 # For more information see: https://github.com/actions/setup-java/blob/main/docs/advanced-usage.md#Publishing-using-gradle
 
 name: Gradle Package
-
 on:
-  release:
-    types: [ created ]
-
+  push:
+    tags:
+      - "v*"
 jobs:
   build:
-
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
       - uses: actions/checkout@v3
       - name: Set up JDK 8
@@ -33,6 +27,12 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           arguments: build -x test
+
+      - name: Auto Release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
 
       # The USERNAME and TOKEN need to correspond to the credentials environment variables used in
       # the publishing section of your build.gradle
