@@ -15,6 +15,8 @@ import me.zhengjin.common.attachment.controller.vo.MultipartUploadCreateResponse
 import me.zhengjin.common.attachment.po.Attachment
 import me.zhengjin.common.attachment.po.AttachmentModelHelper
 import me.zhengjin.common.attachment.repository.AttachmentRepository
+import me.zhengjin.common.core.exception.ServiceException
+import org.springframework.transaction.annotation.Transactional
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
@@ -60,10 +62,11 @@ open class MinioStorageAdapter(
             }
             response
         } catch (e: Exception) {
-            throw java.lang.RuntimeException("分片初始化失败")
+            throw ServiceException("分片初始化失败")
         }
     }
 
+    @Transactional
     override fun completeMultipartUpload(vo: CompleteMultipartUploadRequestVO): AttachmentVO {
         try {
             val listPartsResult = minioClient.listMultipart(
@@ -108,19 +111,20 @@ open class MinioStorageAdapter(
                 avo.url = super.share(attachment.id!!)
                 avo
             } else {
-                throw RuntimeException("file save failed!")
+                throw ServiceException("file save failed!")
             }
         } catch (e: Exception) {
-            throw java.lang.RuntimeException("分片合并失败")
+            throw ServiceException("分片合并失败")
         }
     }
 
+    @Transactional(readOnly = true)
     override fun share(attachmentId: Long): String {
         val args = GetPresignedObjectUrlArgs
             .builder()
             .method(Method.GET)
             .bucket(minioStorageProperties.bucket)
-            .`object`(super.getAttachment(attachmentId).filePath)
+            .`object`(getAttachment(attachmentId).filePath)
             .expiry(1, TimeUnit.DAYS)
             .build()
 
@@ -130,6 +134,7 @@ open class MinioStorageAdapter(
     /**
      * 获取文件流
      */
+    @Transactional(readOnly = true)
     override fun getAttachmentFileStream(attachment: Attachment): InputStream =
         minioClient.getObject(
             GetObjectArgs
@@ -151,6 +156,7 @@ open class MinioStorageAdapter(
      * @param fileSize          文件大小(字节)
      * @param readOnly          附件是否只读 仅能预览 不能下载
      */
+    @Transactional
     override fun saveFiles(
         file: InputStream,
         module: String,
@@ -180,7 +186,7 @@ open class MinioStorageAdapter(
             .build()
         minioClient.putObject(args)
 
-        val attachment = super.save(
+        val attachment = save(
             readOnly = readOnly,
             module = module,
             businessTypeCode = businessTypeCode,
@@ -191,7 +197,7 @@ open class MinioStorageAdapter(
             filePath = storagePath,
             fileSize = fileSize,
         )
-        attachment.url = super.share(attachment.id!!)
+        attachment.url = share(attachment.id!!)
         return attachment
     }
 }
