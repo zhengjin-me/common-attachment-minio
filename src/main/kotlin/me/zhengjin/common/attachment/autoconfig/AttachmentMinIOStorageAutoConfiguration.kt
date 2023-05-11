@@ -1,7 +1,7 @@
 package me.zhengjin.common.attachment.autoconfig
 
-import io.minio.MinioClient
 import me.zhengjin.common.attachment.adapter.AttachmentStorage
+import me.zhengjin.common.attachment.adapter.CustomMinioClient
 import me.zhengjin.common.attachment.adapter.MinioStorageAdapter
 import me.zhengjin.common.attachment.repository.AttachmentRepository
 import org.slf4j.LoggerFactory
@@ -23,7 +23,7 @@ class AttachmentMinIOStorageAutoConfiguration(
 
     @Bean
     @ConditionalOnMissingBean
-    fun attachmentStorage(minioClient: MinioClient?): AttachmentStorage {
+    fun attachmentStorage(minioClient: CustomMinioClient?): AttachmentStorage {
         attachmentMinioStorageProperties.checkConfig()
         logger.info("attachment storage type: [minio]")
         return MinioStorageAdapter(
