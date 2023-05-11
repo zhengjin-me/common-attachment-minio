@@ -4,11 +4,14 @@ import cn.hutool.core.io.file.FileNameUtil
 import cn.hutool.core.util.RandomUtil
 import io.minio.GetObjectArgs
 import io.minio.GetPresignedObjectUrlArgs
-import io.minio.MinioClient
 import io.minio.PutObjectArgs
+import io.minio.StatObjectArgs
 import io.minio.http.Method
 import me.zhengjin.common.attachment.autoconfig.AttachmentMinIOStorageProperties
 import me.zhengjin.common.attachment.controller.vo.AttachmentVO
+import me.zhengjin.common.attachment.controller.vo.CompleteMultipartUploadRequestVO
+import me.zhengjin.common.attachment.controller.vo.MultipartUploadCreateRequestVO
+import me.zhengjin.common.attachment.controller.vo.MultipartUploadCreateResponseVO
 import me.zhengjin.common.attachment.po.Attachment
 import me.zhengjin.common.attachment.po.AttachmentModelHelper
 import me.zhengjin.common.attachment.repository.AttachmentRepository
@@ -17,16 +20,107 @@ import java.util.concurrent.TimeUnit
 
 open class MinioStorageAdapter(
     private val attachmentRepository: AttachmentRepository,
-    private val attachmentMinioStorageProperties: AttachmentMinIOStorageProperties,
-    private val minioClient: MinioClient,
+    private val minioStorageProperties: AttachmentMinIOStorageProperties,
+    private val minioClient: CustomMinioClient,
 ) : AttachmentStorageAdapter(attachmentRepository) {
+
+    override fun createMultipartUpload(vo: MultipartUploadCreateRequestVO): MultipartUploadCreateResponseVO {
+        return try {
+            vo.fileName = "${dateRuleDir()}/${FileNameUtil.mainName(vo.fileName)}-${
+            RandomUtil.randomString(
+                "abcdefghigklmnopqrstuvwxyzABCDEFGHIGKLMNOPQRSTUVWXYZ",
+                5
+            )
+            }.${FileNameUtil.extName(vo.fileName)}"
+            val response = MultipartUploadCreateResponseVO()
+            response.uploadId = minioClient.initMultipartUpload(
+                minioStorageProperties.bucket!!,
+                null,
+                vo.fileName!!,
+                null,
+                null
+            )
+            val reqParams: MutableMap<String, String> = HashMap()
+            reqParams["uploadId"] = response.uploadId!!
+            for (i in 0 until vo.chunkSize!!) {
+                reqParams["partNumber"] = i.toString()
+                val presignedObjectUrl = minioClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                        .method(Method.PUT)
+                        .bucket(minioStorageProperties.bucket)
+                        .`object`(vo.fileName)
+                        .expiry(1, TimeUnit.HOURS)
+                        .extraQueryParams(reqParams)
+                        .build()
+                )
+                val uploadPartItem = MultipartUploadCreateResponseVO.UploadPartItem()
+                uploadPartItem.partNo = i
+                uploadPartItem.uploadUrl = presignedObjectUrl
+                response.chunks.add(uploadPartItem)
+            }
+            response
+        } catch (e: Exception) {
+            throw java.lang.RuntimeException("分片初始化失败")
+        }
+    }
+
+    override fun completeMultipartUpload(vo: CompleteMultipartUploadRequestVO): AttachmentVO {
+        try {
+            val listPartsResult = minioClient.listMultipart(
+                minioStorageProperties.bucket!!,
+                null,
+                vo.fileName!!,
+                vo.chunkSize!!,
+                0,
+                vo.uploadId!!,
+                null,
+                null
+            ).result()
+            minioClient.mergeMultipartUpload(
+                minioStorageProperties.bucket!!,
+                null,
+                vo.fileName!!,
+                vo.uploadId!!,
+                listPartsResult.partList().toTypedArray(),
+                null,
+                null
+            )
+            val fileInfo = minioClient.statObject(
+                StatObjectArgs.builder()
+                    .bucket(minioStorageProperties.bucket)
+                    .`object`(vo.fileName)
+                    .build()
+            ).get()
+            var attachment = Attachment()
+            attachment.module = vo.module
+            attachment.businessTypeCode = vo.businessTypeCode
+            attachment.businessTypeName = vo.businessTypeName
+            attachment.pkId = vo.pkId
+
+            attachment.fileOriginName = FileNameUtil.getName(fileInfo.`object`())
+            attachment.fileType = fileInfo.contentType()
+            attachment.filePath = fileInfo.`object`()
+            attachment.fileSize = fileInfo.size()
+            attachment = attachmentRepository.save(attachment)
+
+            return if (attachment.id != null) {
+                val avo = AttachmentVO.transform(attachment)
+                avo.url = super.share(attachment.id!!)
+                avo
+            } else {
+                throw RuntimeException("file save failed!")
+            }
+        } catch (e: Exception) {
+            throw java.lang.RuntimeException("分片合并失败")
+        }
+    }
 
     override fun share(attachmentId: Long): String {
         val args = GetPresignedObjectUrlArgs
             .builder()
             .method(Method.GET)
-            .bucket(attachmentMinioStorageProperties.bucket)
-            .`object`(getAttachment(attachmentId).filePath)
+            .bucket(minioStorageProperties.bucket)
+            .`object`(super.getAttachment(attachmentId).filePath)
             .expiry(1, TimeUnit.DAYS)
             .build()
 
@@ -40,10 +134,10 @@ open class MinioStorageAdapter(
         minioClient.getObject(
             GetObjectArgs
                 .builder()
-                .bucket(attachmentMinioStorageProperties.bucket)
+                .bucket(minioStorageProperties.bucket)
                 .`object`(attachment.filePath)
                 .build()
-        )
+        ).get()
 
     /**
      * 附件存储(最终方法)
@@ -79,28 +173,25 @@ open class MinioStorageAdapter(
         val storagePath = "$module/$dateDir/$fileName"
 
         val args = PutObjectArgs.builder()
-            .bucket(attachmentMinioStorageProperties.bucket)
+            .bucket(minioStorageProperties.bucket)
             .`object`(storagePath)
             .stream(file, file.available().toLong(), -1)
             .contentType(fileContentType)
             .build()
         minioClient.putObject(args)
 
-        var attachment = Attachment()
-        if (readOnly) attachment.readOnly = true
-        attachment.module = module
-        attachment.businessTypeCode = if (readOnly) "${businessTypeCode}_ReadOnly" else businessTypeCode
-        attachment.businessTypeName = if (readOnly) "$businessTypeName(预览)" else businessTypeName
-        attachment.pkId = pkId
-        attachment.fileOriginName = fileName
-        attachment.fileType = fileContentType
-        attachment.filePath = storagePath
-        attachment.fileSize = fileSize.toString()
-        attachment = attachmentRepository.save(attachment)
-        return if (attachment.id != null) {
-            AttachmentVO.transform(attachment)
-        } else {
-            throw RuntimeException("file save failed!")
-        }
+        val attachment = super.save(
+            readOnly = readOnly,
+            module = module,
+            businessTypeCode = businessTypeCode,
+            businessTypeName = businessTypeName,
+            pkId = pkId,
+            fileOriginName = fileName,
+            fileType = fileContentType,
+            filePath = storagePath,
+            fileSize = fileSize,
+        )
+        attachment.url = super.share(attachment.id!!)
+        return attachment
     }
 }

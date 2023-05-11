@@ -2,7 +2,8 @@ package me.zhengjin.common.attachment.autoconfig
 
 import io.minio.BucketExistsArgs
 import io.minio.MakeBucketArgs
-import io.minio.MinioClient
+import io.minio.MinioAsyncClient
+import me.zhengjin.common.attachment.adapter.CustomMinioClient
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.AutoConfigureBefore
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
@@ -23,9 +24,9 @@ class AttachmentMinioClientAutoConfiguration(
 
     @Bean
     @ConditionalOnMissingBean
-    fun minioClient(): MinioClient {
+    fun minioClient(): CustomMinioClient {
         attachmentMinioStorageProperties.checkConfig()
-        val client = MinioClient.builder()
+        val client = MinioAsyncClient.builder()
             .endpoint(attachmentMinioStorageProperties.endpoint)
             .credentials(attachmentMinioStorageProperties.accessKey, attachmentMinioStorageProperties.secretKey)
             .build()
@@ -34,7 +35,7 @@ class AttachmentMinioClientAutoConfiguration(
                 .builder()
                 .bucket(attachmentMinioStorageProperties.bucket!!)
                 .build()
-        )
+        ).get()
         if (isExist) {
             logger.info("Bucket already exists.")
         } else {
@@ -45,6 +46,6 @@ class AttachmentMinioClientAutoConfiguration(
                     .build()
             )
         }
-        return client
+        return CustomMinioClient(client)
     }
 }
